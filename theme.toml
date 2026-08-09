@@ -1,9 +1,9 @@
 [hyprland]
 # Keep the bar visually synced to the running Hyprland theme.
-sync_border_colors = true
-sync_border_angle = true
-sync_border_width = true
-sync_rounding = true
+sync_border_colors = false
+sync_border_angle = false
+sync_border_width = false
+sync_rounding = false
 sync_gaps_out = false
 
 [bar]
@@ -52,10 +52,10 @@ enabled = true
 width_px = 2
 
 # Used if Hyprland color parsing fails or sync_border_colors = false.
-fallback_colors = ["#33ccff", "#ff66cc"]
+fallback_colors = ["#33ccff", "#00ff99"]
 
 # Used only when sync_border_angle = false.
-angle_deg = 45.0
+angle_deg = 75.0
 
 [workspaces]
 minimum = 5
