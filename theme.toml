@@ -1,0 +1,144 @@
+[hyprland]
+# Keep the bar visually synced to the running Hyprland theme.
+sync_border_colors = true
+sync_border_angle = true
+sync_border_width = true
+sync_rounding = true
+sync_gaps_out = false
+
+[bar]
+# Physical panel height. Kitty's panel kitten accepts pixel heights directly.
+height_px = 34
+
+# Compositor reservation is decoupled from visible panel margins.
+reserve_height_px = "auto"
+bottom_gap_px = 0
+
+# The terminal surface itself is transparent; the rounded chrome image supplies
+# the visible background so the corners can actually be transparent.
+background = "#101318"
+background_opacity = 0.88
+
+# Used only when sync_gaps_out = false.
+floating = true
+gaps_out_px = 8
+
+# Inner terminal padding. Kitty measures this in points.
+gaps_in_pt = 0
+
+# Used only when sync_rounding = false.
+radius_px = 12
+
+# Prefix keeps workspace 1 clear of the rounded left corner. Nerd Fonts uses
+# U+F303 for the Arch logo; replace this with any text/glyph you prefer.
+left_prefix = "   "
+
+# Keep the clock away from the rounded right corner.
+right_padding_cells = 2
+
+clock_interval_seconds = 1.0
+clock_format = "%a %b %d  %I:%M:%S %p"
+
+[text]
+# Affects only this kitty panel, not normal kitty windows.
+size = 14.0
+foreground = "#d8dee9"
+muted = "#687080"
+
+[border]
+enabled = true
+
+# Used only when sync_border_width = false.
+width_px = 2
+
+# Used if Hyprland color parsing fails or sync_border_colors = false.
+fallback_colors = ["#33ccff", "#ff66cc"]
+
+# Used only when sync_border_angle = false.
+angle_deg = 45.0
+
+[workspaces]
+minimum = 5
+
+# Visible padding inside each workspace cell. 0 keeps the row compact.
+padding_cells = 0
+
+# Blank cells between workspace numbers.
+gap_cells = 1
+
+active_foreground = "#101318"
+active_background = "#33ccff"
+inactive_foreground = "#c7ccd6"
+use_border_color_for_active = true
+
+# Rev 2.2 geometry controls. These are intentionally independent from
+# Hyprland's gaps_out and from the panel's top/side floating margins.
+# "auto" reserves exactly height_px. Set a number only for diagnosis/tuning.
+# bottom_gap_px adds intentional space between the reserved bar area and windows.
+# With bottom_gap_px = 0, kitty-desktop itself requests no extra bottom gap.
+
+[media]
+# Space between the workspace cluster and now-playing.
+gap_cells = 2
+
+# Extra blank cells owned by the now-playing mouse region.
+click_padding_cells = 0
+
+# Tauon owns the center slot. Set player = "" to let playerctl choose any
+# active MPRIS player, but keeping this at "tauon" prevents Firefox audio from
+# stealing the bar.
+enabled = true
+player = "tauon"
+interval_seconds = 0.5
+max_length = 64
+separator = "   "
+foreground = "#d8dee9"
+
+[volume]
+enabled = true
+
+# Blank cells on each side are part of the clickable/scrollable volume region.
+click_padding_cells = 1
+target = "@DEFAULT_AUDIO_SINK@"
+scroll_step_percent = 5
+# Used only if neither pactl subscribe nor pw-mon is available.
+fallback_interval_seconds = 0.5
+separator = "   "
+foreground = "#d8dee9"
+low_icon = "󰕿"
+medium_icon = "󰖀"
+high_icon = "󰕾"
+muted_icon = "󰖁"
+
+[status]
+# Visible spacing between Volume / Wi-Fi / Bluetooth. Their click padding is
+# separate, so this can stay at 0 while the mouse hitboxes remain generous.
+gap_cells = 0
+
+# Extra spacing before the non-clickable clock.
+clock_gap_cells = 1
+
+# Wi-Fi/Bluetooth state is intentionally lightweight. These are not latency-
+# sensitive controls, so they refresh periodically rather than running more
+# long-lived monitor processes.
+interval_seconds = 2.0
+
+[network]
+enabled = true
+click_padding_cells = 1
+connected_icon = "󰤨"
+disconnected_icon = "󰤯"
+off_icon = "󰤭"
+foreground = "#d8dee9"
+muted_foreground = "#687080"
+# Opens a normal kitty terminal for NetworkManager's TUI.
+click_command = ["kitty", "nmtui"]
+
+[bluetooth]
+enabled = true
+click_padding_cells = 1
+on_icon = "󰂯"
+off_icon = "󰂲"
+foreground = "#d8dee9"
+muted_foreground = "#687080"
+click_command = ["blueman-manager"]

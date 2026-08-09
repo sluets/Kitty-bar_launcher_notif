@@ -1,0 +1,33 @@
+[launcher]
+max_results = 10
+columns = 64
+lines = 15
+show_descriptions = false
+show_count = true
+number_results = true
+
+[search]
+fuzzy = true
+usage_ranking = true
+# Search score always dominates these bonuses; frequently used apps only
+# reorder comparably-good matches.
+frequency_weight = 8.0
+recency_weight = 18.0
+
+[appearance]
+# Falls back to these when ../theme.toml or Hyprland cannot provide colors.
+background = "#101318"
+foreground = "#d8dee9"
+muted = "#687080"
+accent = "#33ccff"
+selection_foreground = "#101318"
+# Empty means derive from the parent bar theme when possible.
+font_size = 14.0
+
+[behavior]
+hide_on_focus_loss = false
+
+# Optional personal search terms. Keys are desktop-file IDs.
+# [aliases]
+# "org.pulseaudio.pavucontrol.desktop" = ["volume", "audio", "sound"]
+# "firefox.desktop" = ["browser", "web"]

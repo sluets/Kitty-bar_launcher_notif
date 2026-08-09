@@ -1,0 +1,3 @@
+# Apps hidden with Alt+H are written here by the launcher.
+# Use the desktop-file ID, not the display name.
+hidden = []

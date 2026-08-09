@@ -1,0 +1,48 @@
+[daemon]
+max_visible = 4
+history_limit = 100
+low_timeout_ms = 3000
+normal_timeout_ms = 5000
+critical_timeout_ms = 0
+
+[replacement]
+# Case-insensitive substring matches against the Freedesktop app_name.
+# Apps listed here always create a new toast even when they send replaces_id.
+# This is useful for music players such as Tauon, where each track change should
+# remain a distinct notification instead of rewriting the previous toast.
+force_new_apps = ["tauon", "mpd"]
+
+[toast]
+# OS-window placement is owned entirely by the four Hyprland slot rules.
+# These terminal dimensions are only the kitty content grid.
+width_cells = 46
+height_cells = 7
+font_size = 12.0
+background_opacity = 0.94
+
+body_max_lines = 3
+summary_max_chars = 60
+body_max_chars = 180
+
+# Album art / notification image placement. Kitty graphics are positioned in
+# terminal cells, so width/height are intentionally separate controls.
+# These two are effectively the notification icon / album-art size controls.
+art_width_cols = 11
+art_height_rows = 5
+art_x_col = 3
+art_y_row = 0
+
+# Space between the right edge of the image and the text block.
+art_gap_cols = 2
+
+# Fine adjustment for the text block. Positive X moves it right; negative X
+# moves it left. text_y_row moves the entire title/body block vertically.
+text_x_offset_cols = 0
+text_y_row = 0
+
+[colors]
+foreground = "#d8dee9"
+muted = "#687080"
+accent = "#33ccff"
+critical = "#ff5577"
+background = "#101318"
