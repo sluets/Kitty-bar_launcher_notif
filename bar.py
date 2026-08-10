@@ -232,6 +232,9 @@ def stable_terminal_window_pixels(expected_height: int, timeout: float = 2.5) ->
 
 
 def draw_chrome(cfg: dict, *, wait_for_stable: bool = False) -> bool:
+    if os.environ.get("KITTY_DESKTOP_CHROME_MODE") == "background-image":
+        return True
+
     expected_height = max(16, int(cfg.get("bar", {}).get("height_px", 34)))
 
     if wait_for_stable:

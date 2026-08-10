@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 try:
@@ -86,6 +88,47 @@ def parse_gradient(text: str, fallback_colors: list[str], fallback_angle: float)
     return colors, angle
 
 
+def output_pixel_width(output_name: str) -> int | None:
+    if not output_name or shutil.which("hyprctl") is None:
+        return None
+    try:
+        proc = subprocess.run(
+            ["hyprctl", "monitors", "-j"],
+            capture_output=True, text=True, timeout=1.0, check=False,
+        )
+        for mon in json.loads(proc.stdout or "[]"):
+            if str(mon.get("name", "")) == output_name:
+                width = int(mon.get("width", 0) or 0)
+                return width if width > 0 else None
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        pass
+    return None
+
+
+def build_panel_background(env: dict[str, str], output_name: str, height_px: int) -> Path | None:
+    width = output_pixel_width(output_name)
+    if width is None:
+        return None
+    old_values = {k: os.environ.get(k) for k in env if k.startswith("KITTY_DESKTOP_")}
+    try:
+        for key, value in env.items():
+            if key.startswith("KITTY_DESKTOP_"):
+                os.environ[key] = value
+        from bar import make_chrome_png
+        runtime = Path(os.environ.get("XDG_RUNTIME_DIR", tempfile.gettempdir()))
+        safe_output = re.sub(r"[^A-Za-z0-9_.-]+", "_", output_name or "default")
+        path = runtime / f"kittyproto-bar-bg-{safe_output}-{os.getpid()}.png"
+        make_chrome_png(path, width, height_px)
+        return path
+    except (OSError, ValueError, ImportError):
+        return None
+    finally:
+        for key, old in old_values.items():
+            if old is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = old
+
 def main() -> int:
     if shutil.which("kitten") is None:
         print("kitty-desktop: 'kitten' was not found in PATH", file=sys.stderr)
@@ -98,20 +141,15 @@ def main() -> int:
     border = cfg.get("border", {})
 
     height_px = max(16, int(bar.get("height_px", 34)))
-    # Keep visible panel height and compositor reservation separate. By default
-    # reserve exactly the visible chrome height; bottom_gap_px is the only extra
-    # space we intentionally ask Hyprland to keep below the bar.
-    reserve_height = bar.get("reserve_height_px", "auto")
-    bottom_gap = max(0, int(bar.get("bottom_gap_px", 0)))
-    if isinstance(reserve_height, str) and reserve_height.strip().lower() == "auto":
-        exclusive_zone = height_px + bottom_gap
-    else:
-        try:
-            exclusive_zone = max(0, int(reserve_height)) + bottom_gap
-        except (TypeError, ValueError):
-            exclusive_zone = height_px + bottom_gap
-    floating = bool(bar.get("floating", True))
-    gaps_in = max(0.0, float(bar.get("gaps_in_pt", 4)))
+
+    # Bar geometry is deliberately split by ownership:
+    #   top_gap_px  -> kittyproto, above the bar
+    #   side_gap_px -> kittyproto, left/right of the bar
+    #   bottom gap  -> Hyprland gaps_out, below the reserved bar area
+    top_gap = max(0, int(bar.get("top_gap_px", 0)))
+    side_gap = max(0, int(bar.get("side_gap_px", 0)))
+    exclusive_zone = height_px + top_gap
+    gaps_in = max(0.0, float(bar.get("gaps_in_pt", 0)))
     font_size = max(4.0, float(text.get("size", 11.0)))
     foreground = str(text.get("foreground", "#d8dee9"))
 
@@ -167,14 +205,9 @@ def main() -> int:
         if 0 <= parsed_radius <= max_sane_radius:
             radius = parsed_radius
 
-    gaps_out = max(0, int(bar.get("gaps_out_px", 8))) if floating else 0
-    if floating and bool(sync.get("sync_gaps_out", True)):
-        gaps_out = max(0, round(parse_first_number(
-            hypr_getoption("general:gaps_out"), float(gaps_out)
-        )))
-
     background = str(bar.get("background", "#101318"))
     opacity = min(1.0, max(0.0, float(bar.get("background_opacity", 0.88))))
+    output = sys.argv[1] if len(sys.argv) > 1 else ""
 
     args = [
         "kitten", "panel",
@@ -184,14 +217,12 @@ def main() -> int:
         # Do not let panel defaults implicitly choose the reservation. Making
         # this explicit lets us diagnose/tune bottom spacing independently of
         # the visible panel and its top/side margins.
-        "--override-exclusive-zone",
-        f"--exclusive-zone={exclusive_zone}",
         "--app-id=kitty-desktop-bar",
         "--focus-policy=not-allowed",
         f"--config={PANEL_CONFIG}",
-        f"--margin-top={gaps_out}",
-        f"--margin-left={gaps_out}",
-        f"--margin-right={gaps_out}",
+        f"--margin-top={top_gap}",
+        f"--margin-left={side_gap}",
+        f"--margin-right={side_gap}",
         "-o", f"font_size={font_size}",
         # Transparent terminal canvas. The chrome PNG supplies the visible bg.
         "-o", "background_opacity=0",
@@ -201,7 +232,6 @@ def main() -> int:
         "-o", "window_border_width=0",
     ]
 
-    output = sys.argv[1] if len(sys.argv) > 1 else ""
     if output:
         args.append(f"--output-name={output}")
 
@@ -215,6 +245,19 @@ def main() -> int:
     env["KITTY_DESKTOP_BACKGROUND"] = background
     env["KITTY_DESKTOP_BACKGROUND_OPACITY"] = str(opacity)
 
+    # icat only paints kitty's integer terminal-cell grid. Kitty background
+    # images paint the whole OS-panel surface, including remainder pixels.
+    panel_background = build_panel_background(env, output, height_px)
+    if panel_background is not None:
+        env["KITTY_DESKTOP_CHROME_MODE"] = "background-image"
+        args.extend([
+            "-o", f"background_image={panel_background}",
+            "-o", "background_image_layout=scaled",
+            "-o", "background_image_linear=no",
+            "-o", "background_tint=0",
+            "-o", "background_tint_gaps=0",
+        ])
+
     # This goes to the per-output supervisor log because launch.py inherits the
     # supervisor's stdout/stderr. It gives us the exact startup values if the
     # chrome ever renders incorrectly again.
@@ -222,11 +265,15 @@ def main() -> int:
         "kittyproto resolved chrome:"
         f" output={output or '<default>'}"
         f" height={height_px}"
+        f" top_gap={top_gap}"
+        f" side_gap={side_gap}"
+        f" exclusive_zone={exclusive_zone}"
         f" border={border_width}"
         f" radius={radius}"
         f" colors={','.join(colors)}"
         f" angle={angle}"
-        f" opacity={opacity}",
+        f" opacity={opacity}"
+        f" chrome_mode={'background-image' if panel_background is not None else 'icat'}",
         file=sys.stderr,
         flush=True,
     )

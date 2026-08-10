@@ -4,30 +4,26 @@ sync_border_colors = false
 sync_border_angle = false
 sync_border_width = false
 sync_rounding = false
-sync_gaps_out = false
 
 [bar]
 # Physical panel height. Kitty's panel kitten accepts pixel heights directly.
-height_px = 34
+height_px = 30
 
-# Compositor reservation is decoupled from visible panel margins.
-reserve_height_px = "auto"
-bottom_gap_px = 0
+# Panel position around the visible bar. Kittyproto owns the top and side
+# margins; Hyprland gaps_out owns the space below the reserved bar area.
+top_gap_px = 8
+side_gap_px = 8
 
 # The terminal surface itself is transparent; the rounded chrome image supplies
 # the visible background so the corners can actually be transparent.
 background = "#101318"
-background_opacity = 0.88
-
-# Used only when sync_gaps_out = false.
-floating = true
-gaps_out_px = 8
+background_opacity = 0.80
 
 # Inner terminal padding. Kitty measures this in points.
 gaps_in_pt = 0
 
 # Used only when sync_rounding = false.
-radius_px = 12
+radius_px = 10
 
 # Prefix keeps workspace 1 clear of the rounded left corner. Nerd Fonts uses
 # U+F303 for the Arch logo; replace this with any text/glyph you prefer.
@@ -37,7 +33,7 @@ left_prefix = "   "
 right_padding_cells = 2
 
 clock_interval_seconds = 1.0
-clock_format = "%a %b %d  %I:%M:%S %p"
+clock_format = "%a %b %d %I:%M%p"
 
 [text]
 # Affects only this kitty panel, not normal kitty windows.
@@ -58,7 +54,7 @@ fallback_colors = ["#33ccff", "#00ff99"]
 angle_deg = 75.0
 
 [workspaces]
-minimum = 5
+minimum = 2
 
 # Visible padding inside each workspace cell. 0 keeps the row compact.
 padding_cells = 0
@@ -70,12 +66,6 @@ active_foreground = "#101318"
 active_background = "#33ccff"
 inactive_foreground = "#c7ccd6"
 use_border_color_for_active = true
-
-# Rev 2.2 geometry controls. These are intentionally independent from
-# Hyprland's gaps_out and from the panel's top/side floating margins.
-# "auto" reserves exactly height_px. Set a number only for diagnosis/tuning.
-# bottom_gap_px adds intentional space between the reserved bar area and windows.
-# With bottom_gap_px = 0, kitty-desktop itself requests no extra bottom gap.
 
 [media]
 # Space between the workspace cluster and now-playing.
