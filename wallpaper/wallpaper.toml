@@ -1,0 +1,55 @@
+[wallpaper]
+# Thumbnails are read from this directory. The actual wallpaper is resolved
+# from the parent Wallpapers directory using the thumbnail filename/stem.
+wallpaper_dir = "~/Pictures/Wallpapers"
+thumbnail_dir = "~/Pictures/Wallpapers/.thumbs"
+state_file = "~/.config/awww/current-wallpaper"
+
+# Fixed grid. Additional wallpapers are shown on following pages.
+columns = 5
+rows = 5
+
+# false = alphabetical by thumbnail filename.
+# true = shuffle the thumbnails into a new random order each time the picker opens.
+random_order = true
+
+# Thumbnail geometry in terminal cells. At the dedicated 11pt picker font,
+# 18x7 gives a near-square thumbnail viewport. The selector is a pixel-thin
+# graphics overlay and consumes no terminal cells.
+thumbnail_width_cells = 18
+thumbnail_height_cells = 7
+
+# Gap between actual thumbnails, in terminal cells. 0 is the tight baseline;
+# negative values intentionally overlap neighboring thumbnail rectangles.
+# Start at 0 and use -1/-2 only if Kitty's cell geometry still leaves more
+# horizontal/vertical breathing room than you want.
+tile_gap_x_cells = 0
+tile_gap_y_cells = 0
+outer_padding_x_cells = 0
+outer_padding_y_cells = 0
+
+# Same transition currently used by the Yazi wallpaper action.
+transition_type = "wipe"
+transition_duration = 2.0
+transition_fps = 60
+
+[appearance]
+# Thin graphics overlay on the selected thumbnail. This is not a cell gutter.
+# 4 source pixels scales to roughly a 1–2 px visible line at the current grid size.
+selector_border_source_px = 4
+background = "#101318"
+foreground = "#d8dee9"
+muted = "#687080"
+accent = "#33ccff"
+font_size = 11.0
+
+
+[performance]
+# Upload thumbnails into Kitty once, then reuse the cached image ids on later pages.
+preload_thumbnails = true
+# How many non-visible thumbnails to preload on each idle tick.
+preload_batch_size = 8
+# Poll interval while waiting for input; lower feels more eager, higher uses less CPU.
+idle_poll_ms = 20
+# After drawing the current page, continue preloading from the next page onward.
+preload_visible_page_first = true
