@@ -1,3 +1,9 @@
+# After editing this file, to refresh the daemon-
+#
+#					  pkill -f '/home/archlinux/.config/kittyproto/notifs/daemon.py'
+#                     sleep 1
+#                    ~/.config/kittyproto/notifs/start-notifs.sh
+
 [daemon]
 max_visible = 4
 history_limit = 100
@@ -27,9 +33,9 @@ body_max_chars = 180
 # Album art / notification image placement. Kitty graphics are positioned in
 # terminal cells, so width/height are intentionally separate controls.
 # These two are effectively the notification icon / album-art size controls.
-art_width_cols = 11
-art_height_rows = 5
-art_x_col = 3
+art_width_cols = 10
+art_height_rows = 4
+art_x_col = 2
 art_y_row = 0
 
 # Space between the right edge of the image and the text block.
@@ -38,7 +44,7 @@ art_gap_cols = 2
 # Fine adjustment for the text block. Positive X moves it right; negative X
 # moves it left. text_y_row moves the entire title/body block vertically.
 text_x_offset_cols = 0
-text_y_row = 0
+text_y_row = 1
 
 [colors]
 foreground = "#d8dee9"

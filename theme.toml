@@ -56,10 +56,22 @@ angle_deg = 75.0
 [workspaces]
 minimum = 2
 
+# Workspace label style:
+#   "numbers" = 1 2 3
+#   "circles" = ○ ● ○
+#   "squares" = □ ■ □
+display = "numbers"
+
+# Glyphs used by the symbolic display modes.
+circle_inactive = "○"
+circle_active = "●"
+square_inactive = "□"
+square_active = "■"
+
 # Visible padding inside each workspace cell. 0 keeps the row compact.
 padding_cells = 0
 
-# Blank cells between workspace numbers.
+# Blank cells between workspace indicators.
 gap_cells = 1
 
 active_foreground = "#101318"
@@ -74,12 +86,18 @@ gap_cells = 2
 # Extra blank cells owned by the now-playing mouse region.
 click_padding_cells = 0
 
-# Tauon owns the center slot. Set player = "" to let playerctl choose any
-# active MPRIS player, but keeping this at "tauon" prevents Firefox audio from
-# stealing the bar.
+# Direct MPD backend. The bar listens to MPD's `idle player` event, so song
+# changes and play/pause state update immediately without a polling loop.
+# Leave socket empty to use $XDG_RUNTIME_DIR/mpd/socket.
 enabled = true
-player = "tauon"
+backend = "mpd"
+socket = ""
+reconnect_seconds = 2.0
+
+# Used only if backend = "mpris".
+player = ""
 interval_seconds = 0.5
+
 max_length = 64
 separator = "   "
 foreground = "#d8dee9"

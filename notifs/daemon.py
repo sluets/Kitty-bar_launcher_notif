@@ -180,7 +180,7 @@ class Notifications(ServiceInterface):
 
     @method()
     def GetCapabilities(self) -> "as":
-        return ["body"]
+        return ["body", "icon-static"]
 
     @method()
     async def Notify(
@@ -201,10 +201,13 @@ class Notifications(ServiceInterface):
 
     @method()
     async def CloseNotification(self, id: "u"):
-        if not await self.manager.close(int(id), 3):
+        notice_id = int(id)
+        if notice_id == 0:
+            return
+        if not await self.manager.close(notice_id, 3):
             raise DBusError(
                 "org.freedesktop.Notifications.InvalidNotification",
-                f"notification {id} does not exist",
+                "",
             )
 
     @method()
@@ -374,6 +377,13 @@ class NotificationManager:
                 notice.timer_task = asyncio.create_task(self._expire_after(notice.id, notice.generation, timeout_ms))
             return id
 
+    def _cleanup_art(self, id: int) -> None:
+        for path in RUNTIME_DIR.glob(f"art-{int(id)}-*.png"):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
     def _payload(self, n: Notice) -> dict:
         image_path = resolve_image_path(n.app_icon, n.hints, RUNTIME_DIR / f"art-{n.id}-{n.generation}.png")
         return {
@@ -484,6 +494,7 @@ class NotificationManager:
         if n.timer_task and n.timer_task is not asyncio.current_task():
             n.timer_task.cancel()
         self._history_close(id, reason)
+        self._cleanup_art(id)
         if self.interface:
             self.interface.NotificationClosed(id, reason)
 
@@ -511,7 +522,6 @@ async def amain() -> int:
 
     config = load_toml(CONFIG_PATH)
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-    PID_PATH.write_text(str(os.getpid()) + "\n")
 
     manager = NotificationManager(config)
     interface = Notifications(manager)
@@ -525,9 +535,12 @@ async def amain() -> int:
             "Stop/mask Dunst first, then start kittyproto notifs again.",
             file=sys.stderr,
         )
-        PID_PATH.unlink(missing_ok=True)
         return 2
 
+    # Only publish a pid after this process genuinely owns the notification
+    # bus name. start-notifs.sh therefore cannot mistake a losing process for
+    # a successful start.
+    PID_PATH.write_text(str(os.getpid()) + "\n")
     print(f"{LOG_PREFIX} ready: org.freedesktop.Notifications", flush=True)
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()

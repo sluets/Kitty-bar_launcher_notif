@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""kitty-desktop Rev 4.1 bar: clickable workspaces/media/audio, Wi-Fi/Bluetooth launchers, clock."""
+"""kitty-desktop Rev 4.2 bar: event-driven MPD media, audio, workspaces, Wi-Fi/Bluetooth, clock."""
 
 from __future__ import annotations
 
@@ -348,29 +348,223 @@ def run_text(command: list[str], timeout: float = 0.7) -> str:
     return ""
 
 
+
+def mpd_socket_path(cfg: dict) -> Path:
+    media = cfg.get("media", {})
+    configured = str(media.get("socket", "")).strip()
+    if configured:
+        return Path(os.path.expandvars(configured)).expanduser()
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime:
+        return Path(runtime) / "mpd" / "socket"
+    return Path(f"/run/user/{os.getuid()}/mpd/socket")
+
+
+def _mpd_read_response(sock: socket.socket, timeout: float = 0.7) -> list[str] | None:
+    sock.settimeout(timeout)
+    data = bytearray()
+    try:
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                return None
+            data.extend(chunk)
+            if data.endswith(b"OK\n") or data.startswith(b"ACK ") or b"\nACK " in data:
+                break
+    except (OSError, socket.timeout):
+        return None
+
+    lines = data.decode("utf-8", "replace").splitlines()
+    if any(line.startswith("ACK ") for line in lines):
+        return None
+    return [line for line in lines if line != "OK"]
+
+
+def _mpd_connect(cfg: dict, timeout: float = 0.7) -> socket.socket | None:
+    path = mpd_socket_path(cfg)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect(str(path))
+        greeting = bytearray()
+        while b"\n" not in greeting:
+            chunk = sock.recv(256)
+            if not chunk:
+                raise OSError("MPD closed before greeting")
+            greeting.extend(chunk)
+        if not greeting.decode("utf-8", "replace").startswith("OK MPD "):
+            raise OSError("invalid MPD greeting")
+        return sock
+    except OSError:
+        sock.close()
+        return None
+
+
+def mpd_command(cfg: dict, command: str, timeout: float = 0.7) -> list[str] | None:
+    sock = _mpd_connect(cfg, timeout=timeout)
+    if sock is None:
+        return None
+    try:
+        sock.sendall((command + "\n").encode())
+        return _mpd_read_response(sock, timeout=timeout)
+    except OSError:
+        return None
+    finally:
+        sock.close()
+
+
+def _mpd_fields(lines: list[str] | None) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    if not lines:
+        return fields
+    for line in lines:
+        key, sep, value = line.partition(": ")
+        if sep and key not in fields:
+            fields[key] = value
+    return fields
+
+
+class MPDIdleSource:
+    """One long-lived MPD connection blocked in `idle player`.
+
+    The main loop selects on this socket. MPD wakes it immediately when
+    playback state or the current song changes. Queries/actions use separate
+    short-lived connections so this watcher can remain blocked in `idle`.
+    """
+
+    def __init__(self, cfg: dict):
+        self.cfg = cfg
+        self.sock: socket.socket | None = None
+        self.buffer = bytearray()
+        self.next_retry = 0.0
+        self.retry_seconds = max(
+            0.5, float(cfg.get("media", {}).get("reconnect_seconds", 2.0))
+        )
+        self.connect()
+
+    def connect(self) -> None:
+        now = time.monotonic()
+        if self.sock is not None or now < self.next_retry:
+            return
+        sock = _mpd_connect(self.cfg)
+        if sock is None:
+            self.next_retry = now + self.retry_seconds
+            return
+        try:
+            sock.setblocking(False)
+            sock.sendall(b"idle player\n")
+        except OSError:
+            sock.close()
+            self.next_retry = now + self.retry_seconds
+            return
+        self.sock = sock
+        self.buffer.clear()
+
+    def fileno(self) -> int | None:
+        if self.sock is None:
+            return None
+        try:
+            return self.sock.fileno()
+        except OSError:
+            return None
+
+    def drain(self) -> bool:
+        """Consume one idle response; return True when player state changed."""
+        sock = self.sock
+        if sock is None:
+            return False
+
+        try:
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    self.close()
+                    return False
+                self.buffer.extend(chunk)
+                if len(chunk) < 4096:
+                    break
+        except BlockingIOError:
+            pass
+        except OSError:
+            self.close()
+            return False
+
+        raw = bytes(self.buffer)
+        if b"\nOK\n" not in raw and not raw.endswith(b"OK\n") and b"\nACK " not in raw:
+            return False
+
+        lines = raw.decode("utf-8", "replace").splitlines()
+        changed = any(line == "changed: player" for line in lines)
+        self.buffer.clear()
+
+        try:
+            sock.sendall(b"idle player\n")
+        except OSError:
+            self.close()
+
+        return changed
+
+    def restart_if_needed(self) -> bool:
+        """Reconnect if needed; True means caller should refresh media state."""
+        if self.sock is not None:
+            return False
+        before = self.sock
+        self.connect()
+        return before is None and self.sock is not None
+
+    def close(self) -> None:
+        sock = self.sock
+        self.sock = None
+        self.buffer.clear()
+        self.next_retry = time.monotonic() + self.retry_seconds
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+
 def query_media(cfg: dict) -> tuple[str, str, str] | None:
     media = cfg.get("media", {})
-    if not bool(media.get("enabled", True)) or shutil.which("playerctl") is None:
+    if not bool(media.get("enabled", True)):
         return None
 
-    player = str(media.get("player", "tauon")).strip()
-    command = ["playerctl"]
-    if player:
-        command.append(f"--player={player}")
-    metadata_command = command + ["metadata", "--format", "{{artist}}\t{{title}}"]
-    output = run_text(metadata_command)
-    if not output:
-        return None
+    backend = str(media.get("backend", "mpd")).strip().lower()
+    if backend == "mpd":
+        status_fields = _mpd_fields(mpd_command(cfg, "status"))
+        song_fields = _mpd_fields(mpd_command(cfg, "currentsong"))
+        if not status_fields or not song_fields:
+            return None
 
-    status = run_text(command + ["status"])
-    parts = output.split("\t", 1)
-    while len(parts) < 2:
-        parts.append("")
-    artist, title = (part.strip() for part in parts[:2])
-    if not artist and not title:
-        return None
-    return status, artist, title
+        state = status_fields.get("state", "")
+        artist = song_fields.get("Artist", "").strip()
+        title = song_fields.get("Title", "").strip()
+        if not title:
+            title = Path(song_fields.get("file", "")).stem
+        if not artist and not title:
+            return None
+        return state, artist, title
 
+    if backend == "mpris":
+        if shutil.which("playerctl") is None:
+            return None
+        player = str(media.get("player", "")).strip()
+        command = ["playerctl"]
+        if player:
+            command.append(f"--player={player}")
+        output = run_text(command + ["metadata", "--format", "{{artist}}\t{{title}}"])
+        if not output:
+            return None
+        status = run_text(command + ["status"])
+        parts = output.split("\t", 1)
+        while len(parts) < 2:
+            parts.append("")
+        artist, title = (part.strip() for part in parts[:2])
+        if not artist and not title:
+            return None
+        return status, artist, title
+
+    return None
 
 def query_volume(cfg: dict) -> tuple[int, bool] | None:
     volume = cfg.get("volume", {})
@@ -436,15 +630,26 @@ def dispatch_workspace(workspace_id: int) -> None:
 
 
 def media_action(cfg: dict, action: str) -> None:
-    if shutil.which("playerctl") is None:
-        return
-    player = str(cfg.get("media", {}).get("player", "tauon")).strip()
-    command = ["playerctl"]
-    if player:
-        command.append(f"--player={player}")
-    command.append(action)
-    spawn(command)
+    media = cfg.get("media", {})
+    backend = str(media.get("backend", "mpd")).strip().lower()
 
+    if backend == "mpd":
+        command = {
+            "play-pause": "pause",
+            "next": "next",
+            "previous": "previous",
+        }.get(action)
+        if command:
+            mpd_command(cfg, command)
+        return
+
+    if backend == "mpris" and shutil.which("playerctl") is not None:
+        player = str(media.get("player", "")).strip()
+        command = ["playerctl"]
+        if player:
+            command.append(f"--player={player}")
+        command.append(action)
+        spawn(command)
 
 def volume_action(cfg: dict, action: str) -> None:
     volume = cfg.get("volume", {})
@@ -664,12 +869,28 @@ def render(cfg: dict, existing: list[int], active: int | None,
     left_prefix = str(bar.get("left_prefix", "   "))
     right_padding = " " * max(0, int(bar.get("right_padding_cells", 2)))
 
+    display_mode = str(workspaces.get("display", "numbers")).strip().lower()
+    if display_mode not in {"numbers", "circles", "squares"}:
+        display_mode = "numbers"
+
+    def workspace_label(wid: int, is_active: bool) -> str:
+        if display_mode == "circles":
+            key = "circle_active" if is_active else "circle_inactive"
+            fallback = "●" if is_active else "○"
+            return str(workspaces.get(key, fallback))
+        if display_mode == "squares":
+            key = "square_active" if is_active else "square_inactive"
+            fallback = "■" if is_active else "□"
+            return str(workspaces.get(key, fallback))
+        return str(wid)
+
     chunks: list[str] = []
     plain_chunks: list[str] = []
     hit_regions: list[tuple[int, int, str, int | None]] = []
     cursor_col = len(left_prefix) + 1
     for index, wid in enumerate(ids):
-        plain = f"{workspace_pad}{wid}{workspace_pad}"
+        label = workspace_label(wid, wid == active)
+        plain = f"{workspace_pad}{label}{workspace_pad}"
         plain_chunks.append(plain)
         start_col = cursor_col
         end_col = cursor_col + len(plain) - 1
@@ -816,9 +1037,9 @@ def handle_mouse(cfg: dict, regions: list[tuple[int, int, str, int | None]],
     elif kind == "media":
         if base == 0:
             media_action(cfg, "play-pause")
-        elif base == 64:
+        elif base == 1:
             media_action(cfg, "previous")
-        elif base == 65:
+        elif base == 2:
             media_action(cfg, "next")
     elif kind == "volume":
         if base == 0:
@@ -891,7 +1112,9 @@ def main() -> int:
 
     cfg = load_config()
     interval = max(0.1, float(cfg.get("bar", {}).get("clock_interval_seconds", 1.0)))
-    media_interval = max(0.2, float(cfg.get("media", {}).get("interval_seconds", 0.5)))
+    media_cfg = cfg.get("media", {})
+    media_backend = str(media_cfg.get("backend", "mpd")).strip().lower()
+    media_interval = max(0.2, float(media_cfg.get("interval_seconds", 0.5)))
     volume_cfg = cfg.get("volume", {})
     volume_fallback_interval = max(0.2, float(volume_cfg.get("fallback_interval_seconds", 0.5)))
     status_interval = max(0.5, float(cfg.get("status", {}).get("interval_seconds", 2.0)))
@@ -911,6 +1134,11 @@ def main() -> int:
     buffer = b""
     mouse_buffer = ""
     audio_events = AudioEventSource() if bool(volume_cfg.get("enabled", True)) else None
+    mpd_events = (
+        MPDIdleSource(cfg)
+        if bool(media_cfg.get("enabled", True)) and media_backend == "mpd"
+        else None
+    )
 
     stdin_fd: int | None = None
     old_termios = None
@@ -955,7 +1183,11 @@ def main() -> int:
                 chrome_retry_at = now + 0.35
 
             until_clock = max(0.0, interval - (now - last_clock_tick))
-            until_media = max(0.0, media_interval - (now - last_media_tick))
+            until_media = (
+                max(0.0, media_interval - (now - last_media_tick))
+                if media_backend == "mpris"
+                else 3600.0
+            )
             until_status = max(0.0, status_interval - (now - last_status_tick))
             audio_fd = audio_events.fileno() if audio_events is not None else None
             until_volume_fallback = (
@@ -965,6 +1197,7 @@ def main() -> int:
             )
             wait_for = min(until_clock, until_media, until_status, until_volume_fallback)
             dirty = False
+            media_dirty = False
             volume_dirty = False
             mouse_dirty = False
 
@@ -973,6 +1206,9 @@ def main() -> int:
                 read_fds.append(sock)
             if audio_fd is not None:
                 read_fds.append(audio_fd)
+            mpd_fd = mpd_events.fileno() if mpd_events is not None else None
+            if mpd_fd is not None:
+                read_fds.append(mpd_fd)
             if stdin_fd is not None:
                 read_fds.append(stdin_fd)
 
@@ -1006,6 +1242,9 @@ def main() -> int:
             if audio_events is not None and audio_fd is not None and audio_fd in readable:
                 volume_dirty = audio_events.drain()
 
+            if mpd_events is not None and mpd_fd is not None and mpd_fd in readable:
+                media_dirty = mpd_events.drain()
+
             if stdin_fd is not None and stdin_fd in readable:
                 try:
                     data = os.read(stdin_fd, 4096).decode("utf-8", "replace")
@@ -1028,10 +1267,15 @@ def main() -> int:
 
             if audio_events is not None:
                 audio_events.restart_if_dead()
+            if mpd_events is not None and mpd_events.restart_if_needed():
+                media_dirty = True
 
             now = time.monotonic()
             clock_due = now - last_clock_tick >= interval
-            media_due = now - last_media_tick >= media_interval
+            media_due = (
+                media_backend == "mpris"
+                and now - last_media_tick >= media_interval
+            )
             status_due = now - last_status_tick >= status_interval
             volume_fallback_due = (
                 audio_events is not None
@@ -1039,7 +1283,7 @@ def main() -> int:
                 and now - last_volume_tick >= volume_fallback_interval
             )
 
-            if media_due or mouse_dirty:
+            if media_due or media_dirty:
                 media_state = query_media(cfg)
                 last_media_tick = now
             if volume_dirty or volume_fallback_due or mouse_dirty:
@@ -1050,7 +1294,7 @@ def main() -> int:
                 bluetooth_state = query_bluetooth(cfg)
                 last_status_tick = now
 
-            if clock_due or media_due or status_due or volume_dirty or volume_fallback_due or dirty or mouse_dirty:
+            if clock_due or media_due or media_dirty or status_due or volume_dirty or volume_fallback_due or dirty or mouse_dirty:
                 hit_regions = render(cfg, existing, active, media_state, volume_state, wifi_state, bluetooth_state)
                 if clock_due:
                     last_clock_tick = now
@@ -1060,6 +1304,8 @@ def main() -> int:
             sock.close()
         if audio_events is not None:
             audio_events.close()
+        if mpd_events is not None:
+            mpd_events.close()
         sys.stdout.write(RESET + "\x1b[?1000l\x1b[?1006l\x1b[?25h\n")
         sys.stdout.flush()
         if stdin_fd is not None and old_termios is not None:
