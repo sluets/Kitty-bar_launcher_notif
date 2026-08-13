@@ -57,9 +57,10 @@ angle_deg = 75.0
 minimum = 2
 
 # Workspace label style:
-#   "numbers" = 1 2 3
-#   "circles" = ○ ● ○
-#   "squares" = □ ■ □
+#   "numbers"     = 1 2 3
+#   "circles"     = ○ ● ○
+#   "squares"     = □ ■ □
+#   "underscores" = _ _ _
 display = "numbers"
 
 # Glyphs used by the symbolic display modes.
@@ -67,6 +68,13 @@ circle_inactive = "○"
 circle_active = "●"
 square_inactive = "□"
 square_active = "■"
+underscore_inactive = "_"
+underscore_active = "_"
+
+# Active workspace highlight style:
+#   "background" = active cell gets a colored background
+#   "foreground" = only the active label/glyph changes color
+active_style = "foreground"
 
 # Visible padding inside each workspace cell. 0 keeps the row compact.
 padding_cells = 0
@@ -76,7 +84,12 @@ gap_cells = 1
 
 active_foreground = "#101318"
 active_background = "#33ccff"
+active_color = "#33ccff"
 inactive_foreground = "#c7ccd6"
+
+# When true, use Hyprland's active border color as the workspace accent.
+# In background mode it replaces active_background; in foreground mode it
+# replaces active_color.
 use_border_color_for_active = true
 
 [media]

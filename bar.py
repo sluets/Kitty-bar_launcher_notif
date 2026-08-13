@@ -857,11 +857,21 @@ def render(cfg: dict, existing: list[int], active: int | None,
     workspace_pad = " " * workspace_pad_n
     workspace_gap = " " * workspace_gap_n
 
-    active_bg = str(workspaces.get("active_background", "#33ccff"))
-    if bool(workspaces.get("use_border_color_for_active", True)):
-        active_bg = os.environ.get("KITTY_DESKTOP_BORDER_COLOR", active_bg)
+    active_style = str(workspaces.get("active_style", "background")).strip().lower()
+    if active_style not in {"background", "foreground"}:
+        active_style = "background"
 
+    active_bg = str(workspaces.get("active_background", "#33ccff"))
     active_fg = str(workspaces.get("active_foreground", "#101318"))
+    active_color = str(workspaces.get("active_color", "#33ccff"))
+    if bool(workspaces.get("use_border_color_for_active", True)):
+        border_color = os.environ.get("KITTY_DESKTOP_BORDER_COLOR")
+        if border_color:
+            if active_style == "foreground":
+                active_color = border_color
+            else:
+                active_bg = border_color
+
     inactive_fg = str(workspaces.get("inactive_foreground", "#c7ccd6"))
     foreground = str(text.get("foreground", "#d8dee9"))
     muted_fg = str(text.get("muted", "#687080"))
@@ -870,7 +880,7 @@ def render(cfg: dict, existing: list[int], active: int | None,
     right_padding = " " * max(0, int(bar.get("right_padding_cells", 2)))
 
     display_mode = str(workspaces.get("display", "numbers")).strip().lower()
-    if display_mode not in {"numbers", "circles", "squares"}:
+    if display_mode not in {"numbers", "circles", "squares", "underscores"}:
         display_mode = "numbers"
 
     def workspace_label(wid: int, is_active: bool) -> str:
@@ -882,6 +892,9 @@ def render(cfg: dict, existing: list[int], active: int | None,
             key = "square_active" if is_active else "square_inactive"
             fallback = "■" if is_active else "□"
             return str(workspaces.get(key, fallback))
+        if display_mode == "underscores":
+            key = "underscore_active" if is_active else "underscore_inactive"
+            return str(workspaces.get(key, "_"))
         return str(wid)
 
     chunks: list[str] = []
@@ -897,7 +910,10 @@ def render(cfg: dict, existing: list[int], active: int | None,
         hit_regions.append((start_col, end_col, "workspace", wid))
         cursor_col = end_col + 1
         if wid == active:
-            chunks.append(f"{bg(active_bg)}{fg(active_fg)}{plain}{RESET}")
+            if active_style == "foreground":
+                chunks.append(f"{fg(active_color)}{plain}{RESET}")
+            else:
+                chunks.append(f"{bg(active_bg)}{fg(active_fg)}{plain}{RESET}")
         else:
             chunks.append(f"{fg(inactive_fg)}{plain}{RESET}")
         if index < len(ids) - 1:
